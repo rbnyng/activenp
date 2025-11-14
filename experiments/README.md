@@ -28,7 +28,8 @@ python experiments/active_learning_experiment.py --device cuda
 ## Arguments
 
 - `--bbox`: Bounding box for GEDI query (lon_min lat_min lon_max lat_max, default: Maine -70 44 -69 45)
-- `--year`: Year for GeoTessera embeddings (default: 2022)
+- `--year`: Year for GeoTessera embeddings (default: 2022). GEDI data is queried from year±1 for temporal consistency.
+- `--agbd-max`: Maximum AGBD threshold to filter outliers (default: 500 Mg/ha)
 - `--n-seed`: Size of initial seed set (default: 100)
 - `--n-test`: Size of test set (default: 1000)
 - `--n-iterations`: Number of active learning iterations (default: 15)
@@ -38,6 +39,13 @@ python experiments/active_learning_experiment.py --device cuda
 - `--cache-dir`: Cache directory for GEDI/embeddings (default: ./cache)
 - `--sample-limit`: Limit total samples for testing (optional)
 - `--device`: Device to use (default: cuda if available, else cpu)
+
+## Data Quality
+
+The experiment includes several data quality controls:
+- **Temporal matching**: GEDI data is queried from embedding year ±1 year for consistency
+- **Outlier filtering**: AGBD values > 500 Mg/ha are filtered out (removes sensor errors)
+- **Failed embeddings**: Samples with failed GeoTessera extractions are automatically removed
 
 ## Model Configuration
 
