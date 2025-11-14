@@ -4,11 +4,12 @@ This directory contains scripts for running active learning experiments with GED
 
 ## Quick Start
 
-Run the full active learning experiment:
+Run the full active learning experiment (Maine forests):
 
 ```bash
 python experiments/active_learning_experiment.py \
-    --bbox -73.0 2.9 -72.9 3.0 \
+    --bbox -70.0 44.0 -69.0 45.0 \
+    --year 2022 \
     --n-seed 100 \
     --n-test 1000 \
     --n-iterations 15 \
@@ -18,9 +19,16 @@ python experiments/active_learning_experiment.py \
     --device cuda
 ```
 
+Or run with default arguments (Maine forests, 2022 embeddings):
+
+```bash
+python experiments/active_learning_experiment.py --device cuda
+```
+
 ## Arguments
 
-- `--bbox`: Bounding box for GEDI query (lon_min lat_min lon_max lat_max)
+- `--bbox`: Bounding box for GEDI query (lon_min lat_min lon_max lat_max, default: Maine -70 44 -69 45)
+- `--year`: Year for GeoTessera embeddings (default: 2022)
 - `--n-seed`: Size of initial seed set (default: 100)
 - `--n-test`: Size of test set (default: 1000)
 - `--n-iterations`: Number of active learning iterations (default: 15)
@@ -30,6 +38,15 @@ python experiments/active_learning_experiment.py \
 - `--cache-dir`: Cache directory for GEDI/embeddings (default: ./cache)
 - `--sample-limit`: Limit total samples for testing (optional)
 - `--device`: Device to use (default: cuda if available, else cpu)
+
+## Model Configuration
+
+The experiment uses improved hyperparameters to prevent overfitting in few-shot regimes:
+- **Architecture**: Full ANP (attention + latent paths) for better uncertainty in few-shot
+- **Learning rate**: 5e-4 (reduced for stability)
+- **Epochs per iteration**: 30 (reduced from 50 to prevent overfitting)
+- **Hidden dim**: 512
+- **Latent dim**: 128
 
 ## Sampling Strategies
 

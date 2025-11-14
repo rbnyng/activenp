@@ -67,6 +67,13 @@ def query_and_prepare_data(
 
     print(f"Found {len(gedi_df)} GEDI shots")
 
+    # Print AGBD statistics for diagnostics
+    print(f"\nAGBD statistics:")
+    print(f"  Mean: {gedi_df['agbd'].mean():.1f} Mg/ha")
+    print(f"  Std:  {gedi_df['agbd'].std():.1f} Mg/ha")
+    print(f"  Min:  {gedi_df['agbd'].min():.1f} Mg/ha")
+    print(f"  Max:  {gedi_df['agbd'].max():.1f} Mg/ha")
+
     # Sample if limit specified
     if sample_limit and len(gedi_df) > sample_limit:
         gedi_df = gedi_df.sample(n=sample_limit, random_state=42)
@@ -307,8 +314,10 @@ def save_results(
 
 def main():
     parser = argparse.ArgumentParser(description="Run active learning experiment")
-    parser.add_argument('--bbox', type=float, nargs=4, default=[-73.0, 2.9, -72.9, 3.0],
-                        help='Bounding box: lon_min lat_min lon_max lat_max')
+    parser.add_argument('--bbox', type=float, nargs=4, default=[-70.0, 44.0, -69.0, 45.0],
+                        help='Bounding box: lon_min lat_min lon_max lat_max (default: Maine)')
+    parser.add_argument('--year', type=int, default=2022,
+                        help='Year for GeoTessera embeddings (default: 2022)')
     parser.add_argument('--n-seed', type=int, default=100,
                         help='Initial seed size')
     parser.add_argument('--n-test', type=int, default=1000,
@@ -346,18 +355,19 @@ def main():
         'context_repr_dim': 128,
         'hidden_dim': 512,
         'latent_dim': 128,
-        'architecture_mode': 'deterministic',
+        'architecture_mode': 'anp',  # Use full ANP with latent path for better few-shot
         'num_attention_heads': 4,
-        'learning_rate': 1e-3,
+        'learning_rate': 5e-4,  # Reduced from 1e-3 for more stable training
         'batch_size': 32,
-        'epochs_per_iteration': 50,
+        'epochs_per_iteration': 30,  # Reduced from 50 to prevent overfitting
         'kl_weight': 0.1,
         'global_bounds': tuple(args.bbox),
         'bbox': args.bbox,
         'n_seed': args.n_seed,
         'n_test': args.n_test,
         'n_iterations': args.n_iterations,
-        'samples_per_iteration': args.samples_per_iter
+        'samples_per_iteration': args.samples_per_iter,
+        'year': args.year  # Track which year of embeddings was used
     }
 
     # Save config
@@ -366,7 +376,7 @@ def main():
     # Query and prepare data
     df = query_and_prepare_data(
         bbox=tuple(args.bbox),
-        year=2024,
+        year=args.year,
         cache_dir=cache_dir,
         sample_limit=args.sample_limit
     )
