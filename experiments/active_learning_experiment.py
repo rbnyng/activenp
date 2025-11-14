@@ -85,6 +85,14 @@ def query_and_prepare_data(
 
     gedi_df = extractor.extract_patches_batch(gedi_df)
 
+    # Filter out failed extractions (None embeddings)
+    n_before = len(gedi_df)
+    gedi_df = gedi_df[gedi_df['embedding_patch'].notna()].copy()
+    n_after = len(gedi_df)
+
+    if n_before > n_after:
+        print(f"Filtered out {n_before - n_after} shots with failed embedding extraction")
+
     # Add tile_id for spatial grouping
     gedi_df['tile_id'] = (
         (gedi_df['longitude'] // 0.1).astype(int).astype(str) + "_" +
