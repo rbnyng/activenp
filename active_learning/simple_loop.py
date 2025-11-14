@@ -15,7 +15,7 @@ from tqdm import tqdm
 from .strategies import SamplingStrategy
 from models.neural_process import GEDINeuralProcess, neural_process_loss
 from utils.evaluation import compute_metrics
-from utils.normalization import normalize_coords
+from utils.normalization import normalize_coords, normalize_agbd
 
 
 class SimpleActiveLearningLoop:
@@ -195,10 +195,11 @@ class SimpleActiveLearningLoop:
             for emb in train_df['embedding_patch'].values
         ])
 
-        agbd = torch.tensor(
-            train_df['agbd'].values.reshape(-1, 1),
-            dtype=torch.float32
-        )
+        agbd = train_df['agbd'].values.reshape(-1, 1)
+
+        # Normalize AGBD (log-transform)
+        agbd_normalized = normalize_agbd(agbd, agbd_scale=200.0, log_transform=True)
+        agbd = torch.tensor(agbd_normalized, dtype=torch.float32)
 
         # Normalize coordinates if bounds provided
         if self.global_bounds:
@@ -275,6 +276,11 @@ class SimpleActiveLearningLoop:
         targets = np.array(all_targets)
         train_rmse = np.sqrt(np.mean((predictions - targets) ** 2))
 
+        # Diagnostic: Training distribution
+        if self.verbose and total_loss != 0:
+            print(f"  [Training] Predictions: mean={predictions.mean():.3f}, std={predictions.std():.3f}")
+            print(f"  [Training] Targets:     mean={targets.mean():.3f}, std={targets.std():.3f}")
+
         return total_loss, train_rmse
 
     def _evaluate_model(
@@ -290,6 +296,10 @@ class SimpleActiveLearningLoop:
         """
         self.model.eval()
 
+        # Diagnostic: Report context and target sizes
+        if self.verbose:
+            print(f"  [Evaluation] Context size: {len(train_df)}, Target size: {len(test_df)}")
+
         # Prepare context (all training data)
         context_coords = torch.tensor(
             train_df[['longitude', 'latitude']].values,
@@ -301,10 +311,10 @@ class SimpleActiveLearningLoop:
             for emb in train_df['embedding_patch'].values
         ]).to(self.device)
 
-        context_agbd = torch.tensor(
-            train_df['agbd'].values.reshape(-1, 1),
-            dtype=torch.float32
-        ).to(self.device)
+        context_agbd = train_df['agbd'].values.reshape(-1, 1)
+        # Normalize AGBD (log-transform)
+        context_agbd_normalized = normalize_agbd(context_agbd, agbd_scale=200.0, log_transform=True)
+        context_agbd = torch.tensor(context_agbd_normalized, dtype=torch.float32).to(self.device)
 
         # Normalize context coordinates
         if self.global_bounds:
@@ -334,10 +344,10 @@ class SimpleActiveLearningLoop:
                     for emb in batch_test['embedding_patch'].values
                 ]).to(self.device)
 
-                test_agbd = torch.tensor(
-                    batch_test['agbd'].values.reshape(-1, 1),
-                    dtype=torch.float32
-                ).to(self.device)
+                test_agbd = batch_test['agbd'].values.reshape(-1, 1)
+                # Normalize AGBD (log-transform)
+                test_agbd_normalized = normalize_agbd(test_agbd, agbd_scale=200.0, log_transform=True)
+                test_agbd = torch.tensor(test_agbd_normalized, dtype=torch.float32).to(self.device)
 
                 # Normalize test coordinates
                 if self.global_bounds:
@@ -363,6 +373,13 @@ class SimpleActiveLearningLoop:
         # Compute metrics
         predictions = np.array(all_predictions)
         targets = np.array(all_targets)
+
+        # Diagnostic: Check prediction and target distributions
+        if self.verbose:
+            print(f"\n  Diagnostic - Predictions: mean={predictions.mean():.3f}, std={predictions.std():.3f}, min={predictions.min():.3f}, max={predictions.max():.3f}")
+            print(f"  Diagnostic - Targets:     mean={targets.mean():.3f}, std={targets.std():.3f}, min={targets.min():.3f}, max={targets.max():.3f}")
+            print(f"  Diagnostic - Residuals:   mean={(predictions - targets).mean():.3f}, std={(predictions - targets).std():.3f}")
+
         metrics = compute_metrics(predictions, targets)
 
         return metrics
@@ -424,10 +441,10 @@ class SimpleActiveLearningLoop:
             for emb in train_df['embedding_patch'].values
         ]).to(self.device)
 
-        context_agbd = torch.tensor(
-            train_df['agbd'].values.reshape(-1, 1),
-            dtype=torch.float32
-        ).to(self.device)
+        context_agbd = train_df['agbd'].values.reshape(-1, 1)
+        # Normalize AGBD (log-transform)
+        context_agbd_normalized = normalize_agbd(context_agbd, agbd_scale=200.0, log_transform=True)
+        context_agbd = torch.tensor(context_agbd_normalized, dtype=torch.float32).to(self.device)
 
         # Normalize coordinates if bounds provided
         if self.global_bounds:
