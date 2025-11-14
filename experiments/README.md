@@ -11,7 +11,7 @@ python experiments/active_learning_experiment.py \
     --bbox -70.0 44.0 -69.0 45.0 \
     --year 2022 \
     --n-seed 100 \
-    --n-test 1000 \
+    --n-pool 500 \
     --n-iterations 15 \
     --samples-per-iter 10 \
     --strategies random uncertainty spatial hybrid \
@@ -31,7 +31,7 @@ python experiments/active_learning_experiment.py --device cuda
 - `--year`: Year for GeoTessera embeddings (default: 2022). GEDI data is queried from year±1 for temporal consistency.
 - `--agbd-max`: Maximum AGBD threshold to filter outliers (default: 500 Mg/ha)
 - `--n-seed`: Size of initial seed set (default: 100)
-- `--n-test`: Size of test set (default: 1000)
+- `--n-pool`: Pool size for active learning (default: half of remaining data). Test set gets everything else.
 - `--n-iterations`: Number of active learning iterations (default: 15)
 - `--samples-per-iter`: Samples to acquire per iteration (default: 10)
 - `--strategies`: List of strategies to compare (default: random uncertainty spatial hybrid)
@@ -39,6 +39,15 @@ python experiments/active_learning_experiment.py --device cuda
 - `--cache-dir`: Cache directory for GEDI/embeddings (default: ./cache)
 - `--sample-limit`: Limit total samples for testing (optional)
 - `--device`: Device to use (default: cuda if available, else cpu)
+
+## Data Splits
+
+The data is split into three sets:
+1. **Seed**: Initial training set (--n-seed samples, default: 100)
+2. **Pool**: Samples available for active learning selection (--n-pool, default: half of remaining)
+3. **Test**: ALL remaining data (used to evaluate how well the sampling policy covers the entire AOI)
+
+Note: The test set contains all data not in seed/pool to properly evaluate spatial coverage.
 
 ## Data Quality
 

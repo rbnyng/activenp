@@ -132,7 +132,7 @@ def query_and_prepare_data(
 def split_data(
     df: pd.DataFrame,
     n_seed: int = 100,
-    n_test: int = 1000,
+    n_pool: int = None,
     seed: int = 42
 ) -> tuple:
     """
@@ -141,11 +141,14 @@ def split_data(
     Args:
         df: Full dataset
         n_seed: Size of initial seed set
-        n_test: Size of test set
+        n_pool: Size of pool for active learning (None = use half of remaining)
         seed: Random seed
 
     Returns:
         (seed_df, pool_df, test_df)
+
+    Note: test_df contains ALL remaining data to evaluate how well the
+    sampling policy covers the entire AOI.
     """
     print(f"\n{'='*60}")
     print("Step 3: Splitting data")
@@ -154,16 +157,20 @@ def split_data(
     np.random.seed(seed)
     df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
 
-    # Split
+    # Split: seed + pool + test (everything else)
     seed_df = df.iloc[:n_seed].copy()
     remaining = df.iloc[n_seed:].copy()
 
-    test_df = remaining.iloc[:n_test].copy()
-    pool_df = remaining.iloc[n_test:].copy()
+    # Pool size: either specified or half of remaining data
+    if n_pool is None:
+        n_pool = len(remaining) // 2
+
+    pool_df = remaining.iloc[:n_pool].copy()
+    test_df = remaining.iloc[n_pool:].copy()  # Everything else as test
 
     print(f"Seed (initial train): {len(seed_df)}")
     print(f"Pool: {len(pool_df)}")
-    print(f"Test: {len(test_df)}")
+    print(f"Test (full AOI coverage): {len(test_df)}")
 
     return seed_df, pool_df, test_df
 
@@ -340,8 +347,8 @@ def main():
                         help='Maximum AGBD threshold to filter outliers (default: 500 Mg/ha)')
     parser.add_argument('--n-seed', type=int, default=100,
                         help='Initial seed size')
-    parser.add_argument('--n-test', type=int, default=1000,
-                        help='Test set size')
+    parser.add_argument('--n-pool', type=int, default=None,
+                        help='Pool size for active learning (default: half of remaining data)')
     parser.add_argument('--n-iterations', type=int, default=15,
                         help='Number of AL iterations')
     parser.add_argument('--samples-per-iter', type=int, default=10,
@@ -386,7 +393,7 @@ def main():
         'year': args.year,  # Track which year of embeddings was used
         'agbd_max': args.agbd_max,  # Maximum AGBD threshold
         'n_seed': args.n_seed,
-        'n_test': args.n_test,
+        'n_pool': args.n_pool,
         'n_iterations': args.n_iterations,
         'samples_per_iteration': args.samples_per_iter
     }
@@ -407,7 +414,7 @@ def main():
     seed_df, pool_df, test_df = split_data(
         df,
         n_seed=args.n_seed,
-        n_test=args.n_test,
+        n_pool=args.n_pool,
         seed=42
     )
 
