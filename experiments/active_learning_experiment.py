@@ -59,9 +59,8 @@ def query_and_prepare_data(
     print(f"Region: {bbox}")
     print(f"Year: {year}")
 
-    # Query GEDI data - match embedding year ±1 year for temporal consistency
-    start_year = max(2019, year - 1)  # GEDI started in 2019
-    end_year = min(2023, year + 1)    # Use available data
+    start_year = 2022
+    end_year = 2022
 
     querier = GEDIQuerier(cache_dir=cache_dir / "gedi")
     gedi_df = querier.query_bbox(
