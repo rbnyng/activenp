@@ -28,7 +28,7 @@ from datetime import datetime
 
 from data.gedi import GEDIQuerier
 from data.embeddings import EmbeddingExtractor
-from active_learning import get_sampler, ActiveLearningLoop
+from active_learning import get_sampler, SimpleActiveLearningLoop
 from models.neural_process import GEDINeuralProcess
 from utils.config import save_config
 
@@ -228,8 +228,8 @@ def run_active_learning(
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
 
-    # Create active learning loop
-    al_loop = ActiveLearningLoop(
+    # Create active learning loop (using simplified version for individual samples)
+    al_loop = SimpleActiveLearningLoop(
         model=model,
         optimizer=optimizer,
         device=device,
@@ -238,6 +238,7 @@ def run_active_learning(
         epochs_per_iteration=config['epochs_per_iteration'],
         kl_weight=config['kl_weight'],
         global_bounds=config['global_bounds'],
+        context_ratio=0.5,  # Use 50% as context, 50% as targets
         verbose=True
     )
 
