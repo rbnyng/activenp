@@ -79,10 +79,11 @@ def query_and_prepare_data(
 
     extractor = EmbeddingExtractor(
         year=year,
+        patch_size=3,
         cache_dir=cache_dir / "geotessera"
     )
 
-    gedi_df = extractor.extract_patches_batch(gedi_df, patch_size=3)
+    gedi_df = extractor.extract_patches_batch(gedi_df)
 
     # Add tile_id for spatial grouping
     gedi_df['tile_id'] = (
