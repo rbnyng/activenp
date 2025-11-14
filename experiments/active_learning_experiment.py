@@ -61,8 +61,8 @@ def query_and_prepare_data(
     querier = GEDIQuerier(cache_dir=cache_dir / "gedi")
     gedi_df = querier.query_bbox(
         bbox=bbox,
-        start_date="2019-01-01",
-        end_date="2023-12-31"
+        start_time="2019-01-01",
+        end_time="2023-12-31"
     )
 
     print(f"Found {len(gedi_df)} GEDI shots")
