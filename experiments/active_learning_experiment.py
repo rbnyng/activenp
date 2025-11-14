@@ -37,7 +37,8 @@ def query_and_prepare_data(
     bbox: tuple,
     year: int = 2024,
     cache_dir: Path = Path("./cache"),
-    sample_limit: int = None
+    sample_limit: int = None,
+    agbd_max: float = 500.0
 ) -> pd.DataFrame:
     """
     Query GEDI data and extract embeddings for the specified region.
@@ -47,6 +48,7 @@ def query_and_prepare_data(
         year: Year for GeoTessera embeddings
         cache_dir: Directory for caching
         sample_limit: Maximum number of samples to keep (for testing)
+        agbd_max: Maximum AGBD threshold to filter outliers (default: 500 Mg/ha)
 
     Returns:
         DataFrame with columns: latitude, longitude, agbd, embedding_patch, tile_id
@@ -57,22 +59,38 @@ def query_and_prepare_data(
     print(f"Region: {bbox}")
     print(f"Year: {year}")
 
-    # Query GEDI data
+    # Query GEDI data - match embedding year ±1 year for temporal consistency
+    start_year = max(2019, year - 1)  # GEDI started in 2019
+    end_year = min(2023, year + 1)    # Use available data
+
     querier = GEDIQuerier(cache_dir=cache_dir / "gedi")
     gedi_df = querier.query_bbox(
         bbox=bbox,
-        start_time="2019-01-01",
-        end_time="2023-12-31"
+        start_time=f"{start_year}-01-01",
+        end_time=f"{end_year}-12-31"
     )
 
-    print(f"Found {len(gedi_df)} GEDI shots")
+    print(f"Found {len(gedi_df)} GEDI shots ({start_year}-{end_year})")
 
-    # Print AGBD statistics for diagnostics
-    print(f"\nAGBD statistics:")
+    # Print raw AGBD statistics
+    print(f"\nRaw AGBD statistics:")
     print(f"  Mean: {gedi_df['agbd'].mean():.1f} Mg/ha")
     print(f"  Std:  {gedi_df['agbd'].std():.1f} Mg/ha")
     print(f"  Min:  {gedi_df['agbd'].min():.1f} Mg/ha")
     print(f"  Max:  {gedi_df['agbd'].max():.1f} Mg/ha")
+
+    # Filter outliers
+    n_before = len(gedi_df)
+    gedi_df = gedi_df[gedi_df['agbd'] <= agbd_max].copy()
+    n_after = len(gedi_df)
+
+    if n_before > n_after:
+        print(f"\nFiltered {n_before - n_after} shots with AGBD > {agbd_max} Mg/ha")
+        print(f"\nFiltered AGBD statistics:")
+        print(f"  Mean: {gedi_df['agbd'].mean():.1f} Mg/ha")
+        print(f"  Std:  {gedi_df['agbd'].std():.1f} Mg/ha")
+        print(f"  Min:  {gedi_df['agbd'].min():.1f} Mg/ha")
+        print(f"  Max:  {gedi_df['agbd'].max():.1f} Mg/ha")
 
     # Sample if limit specified
     if sample_limit and len(gedi_df) > sample_limit:
@@ -318,6 +336,8 @@ def main():
                         help='Bounding box: lon_min lat_min lon_max lat_max (default: Maine)')
     parser.add_argument('--year', type=int, default=2022,
                         help='Year for GeoTessera embeddings (default: 2022)')
+    parser.add_argument('--agbd-max', type=float, default=500.0,
+                        help='Maximum AGBD threshold to filter outliers (default: 500 Mg/ha)')
     parser.add_argument('--n-seed', type=int, default=100,
                         help='Initial seed size')
     parser.add_argument('--n-test', type=int, default=1000,
@@ -363,11 +383,12 @@ def main():
         'kl_weight': 0.1,
         'global_bounds': tuple(args.bbox),
         'bbox': args.bbox,
+        'year': args.year,  # Track which year of embeddings was used
+        'agbd_max': args.agbd_max,  # Maximum AGBD threshold
         'n_seed': args.n_seed,
         'n_test': args.n_test,
         'n_iterations': args.n_iterations,
-        'samples_per_iteration': args.samples_per_iter,
-        'year': args.year  # Track which year of embeddings was used
+        'samples_per_iteration': args.samples_per_iter
     }
 
     # Save config
@@ -378,7 +399,8 @@ def main():
         bbox=tuple(args.bbox),
         year=args.year,
         cache_dir=cache_dir,
-        sample_limit=args.sample_limit
+        sample_limit=args.sample_limit,
+        agbd_max=args.agbd_max
     )
 
     # Split data
