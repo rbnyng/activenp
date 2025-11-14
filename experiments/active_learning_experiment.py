@@ -378,13 +378,13 @@ def main():
     # Model configuration
     config = {
         'patch_size': 3,
-        'embedding_feature_dim': 128,
-        'context_repr_dim': 128,
+        'embedding_feature_dim': 1024,
+        'context_repr_dim': 256,
         'hidden_dim': 512,
-        'latent_dim': 128,
+        'latent_dim': 256,
         'architecture_mode': 'anp',  # Use full ANP with latent path for better few-shot
-        'num_attention_heads': 4,
-        'learning_rate': 5e-4,  # Reduced from 1e-3 for more stable training
+        'num_attention_heads': 16,
+        'learning_rate': 5e-4,
         'batch_size': 32,
         'epochs_per_iteration': 30,  # Reduced from 50 to prevent overfitting
         'kl_weight': 0.1,
