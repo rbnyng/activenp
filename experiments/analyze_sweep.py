@@ -331,11 +331,12 @@ def plot_cold_start_advantage(
     Computes: (random_metric - uncertainty_metric) vs seed_size
     Positive values mean uncertainty is better.
     """
-    seed_sizes = sorted(results.keys())
+    all_seed_sizes = sorted(results.keys())
+    seed_sizes = []
     advantages = []
     advantages_sem = []
 
-    for seed_size in seed_sizes:
+    for seed_size in all_seed_sizes:
         if 'random' not in results[seed_size] or 'uncertainty' not in results[seed_size]:
             continue
 
@@ -360,11 +361,14 @@ def plot_cold_start_advantage(
             uncertainty_sem = np.std(uncertainty_final) / np.sqrt(len(uncertainty_final))
             adv_sem = np.sqrt(random_sem**2 + uncertainty_sem**2)
 
+            seed_sizes.append(seed_size)
             advantages.append(adv)
             advantages_sem.append(adv_sem)
-        else:
-            advantages.append(np.nan)
-            advantages_sem.append(0)
+
+    # Skip plotting if no data
+    if not seed_sizes:
+        print("Warning: No data available for cold start advantage plot")
+        return
 
     # Plot
     fig, ax = plt.subplots(figsize=(8, 6))
