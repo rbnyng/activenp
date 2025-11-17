@@ -483,11 +483,11 @@ def generate_summary_table(results: Dict) -> pd.DataFrame:
             if not runs:
                 continue
 
-            # Extract final metrics
-            final_rmse = [run['test_rmse'][-1] for run in runs if run['test_rmse']]
-            final_mae = [run['test_mae'][-1] for run in runs if run['test_mae']]
-            final_r2 = [run['test_r2'][-1] for run in runs if run['test_r2']]
-            final_n_train = [run['n_train'][-1] for run in runs if run['n_train']]
+            # Extract final metrics (convert to float to handle string values from JSON)
+            final_rmse = [float(run['test_rmse'][-1]) for run in runs if run['test_rmse']]
+            final_mae = [float(run['test_mae'][-1]) for run in runs if run['test_mae']]
+            final_r2 = [float(run['test_r2'][-1]) for run in runs if run['test_r2']]
+            final_n_train = [int(run['n_train'][-1]) for run in runs if run['n_train']]
 
             summary_data.append({
                 'seed_size': seed_size,
