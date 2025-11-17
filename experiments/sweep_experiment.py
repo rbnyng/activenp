@@ -4,8 +4,11 @@ Sweep experiment harness for active learning.
 This script runs multiple experiments across different configurations:
 - Different initial seed sizes (5, 10, 25, 100, 1000)
 - Multiple random seeds for statistical significance (default: 10)
-- All sampling strategies (random, uncertainty, spatial, hybrid)
+- All sampling strategies run together in each experiment
 - Fixed number of iterations and samples per iteration
+
+Each experiment (seed_size, random_seed) runs all strategies and saves
+them together in a single results.json file.
 
 Results are organized for easy aggregation and analysis.
 """
@@ -41,7 +44,7 @@ def run_single_experiment(
         config: Configuration dict with keys:
             - seed_size: Initial seed size
             - random_seed: Random seed for data split
-            - strategy: Sampling strategy
+            - strategies: List of sampling strategies to run
             - bbox: Bounding box
             - year: Year for embeddings
             - agbd_max: Max AGBD threshold
@@ -58,7 +61,7 @@ def run_single_experiment(
     """
     seed_size = config['seed_size']
     random_seed = config['random_seed']
-    strategy = config['strategy']
+    strategies = config['strategies']
     output_dir = Path(config['output_dir'])
 
     # Use configured number of iterations
@@ -75,7 +78,7 @@ def run_single_experiment(
         '--n-pool', str(config['n_pool']),  # Pool size from config
         '--n-iterations', str(n_iterations),
         '--samples-per-iter', str(samples_per_iter),
-        '--strategies', strategy,
+        '--strategies', *strategies,  # Pass all strategies
         '--output-dir', str(output_dir),
         '--cache-dir', str(base_cache_dir),
         '--device', device
@@ -90,7 +93,7 @@ def run_single_experiment(
 
     # Run experiment
     print(f"\n{'='*60}")
-    print(f"Running: seed={seed_size}, random_seed={random_seed}, strategy={strategy}")
+    print(f"Running: seed={seed_size}, random_seed={random_seed}, strategies={strategies}")
     print(f"Output: {output_dir}")
     print(f"{'='*60}")
 
@@ -144,18 +147,18 @@ def generate_experiment_configs(
     """
     configs = []
 
-    for seed_size, random_seed, strategy in itertools.product(
+    for seed_size, random_seed in itertools.product(
         seed_sizes,
-        range(n_random_seeds),
-        strategies
+        range(n_random_seeds)
     ):
-        # Output directory structure: seed_X/run_Y/strategy_Z
+        # Output directory structure: seed_X/run_Y
+        # All strategies run together in one experiment
         output_dir = base_output_dir / f"seed_{seed_size}" / f"run_{random_seed}"
 
         config = {
             'seed_size': seed_size,
             'random_seed': random_seed,
-            'strategy': strategy,
+            'strategies': strategies,  # Pass all strategies
             'bbox': bbox,
             'year': year,
             'agbd_max': agbd_max,
