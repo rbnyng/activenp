@@ -5,6 +5,7 @@ This script runs multiple experiments across different configurations:
 - Different initial seed sizes (5, 10, 25, 100, 1000)
 - Multiple random seeds for statistical significance (default: 10)
 - All sampling strategies (random, uncertainty, spatial, hybrid)
+- Fixed number of iterations and samples per iteration
 
 Results are organized for easy aggregation and analysis.
 """
@@ -44,7 +45,7 @@ def run_single_experiment(
             - bbox: Bounding box
             - year: Year for embeddings
             - agbd_max: Max AGBD threshold
-            - total_samples: Total sample budget
+            - n_iterations: Number of active learning iterations
             - samples_per_iter: Samples per iteration
             - output_dir: Output directory
             - cache_dir: Cache directory
@@ -60,10 +61,9 @@ def run_single_experiment(
     strategy = config['strategy']
     output_dir = Path(config['output_dir'])
 
-    # Calculate number of iterations based on total sample budget
+    # Use configured number of iterations
     samples_per_iter = config['samples_per_iter']
-    total_samples = config['total_samples']
-    n_iterations = max(1, (total_samples - seed_size) // samples_per_iter)
+    n_iterations = config['n_iterations']
 
     # Build command
     cmd = [
@@ -72,7 +72,7 @@ def run_single_experiment(
         '--year', str(config['year']),
         '--agbd-max', str(config['agbd_max']),
         '--n-seed', str(seed_size),
-        '--n-pool', str(config.get('n_pool', total_samples * 2)),  # Large pool
+        '--n-pool', str(config['n_pool']),  # Pool size from config
         '--n-iterations', str(n_iterations),
         '--samples-per-iter', str(samples_per_iter),
         '--strategies', strategy,
@@ -131,8 +131,9 @@ def generate_experiment_configs(
     bbox: List[float],
     year: int,
     agbd_max: float,
-    total_samples: int,
+    n_iterations: int,
     samples_per_iter: int,
+    n_pool: int,
     base_output_dir: Path
 ) -> List[Dict]:
     """
@@ -148,13 +149,6 @@ def generate_experiment_configs(
         range(n_random_seeds),
         strategies
     ):
-        # Adjust total samples based on seed size
-        # For very large seed sizes, we might want to add fewer samples
-        if seed_size >= 1000:
-            actual_total = seed_size + 500  # Add 500 more samples
-        else:
-            actual_total = max(total_samples, seed_size + 100)
-
         # Output directory structure: seed_X/run_Y/strategy_Z
         output_dir = base_output_dir / f"seed_{seed_size}" / f"run_{random_seed}"
 
@@ -165,10 +159,10 @@ def generate_experiment_configs(
             'bbox': bbox,
             'year': year,
             'agbd_max': agbd_max,
-            'total_samples': actual_total,
+            'n_iterations': n_iterations,
             'samples_per_iter': samples_per_iter,
             'output_dir': str(output_dir),
-            'n_pool': actual_total * 2  # Large pool to ensure we don't run out
+            'n_pool': n_pool
         }
 
         configs.append(config)
@@ -297,10 +291,12 @@ Examples:
                         help='Year for GeoTessera embeddings (default: 2022)')
     parser.add_argument('--agbd-max', type=float, default=500.0,
                         help='Maximum AGBD threshold (default: 500 Mg/ha)')
-    parser.add_argument('--total-samples', type=int, default=250,
-                        help='Total sample budget (default: 250)')
+    parser.add_argument('--n-iterations', type=int, default=15,
+                        help='Number of active learning iterations (default: 15)')
     parser.add_argument('--samples-per-iter', type=int, default=10,
                         help='Samples per iteration (default: 10)')
+    parser.add_argument('--n-pool', type=int, default=500,
+                        help='Pool size for active learning (default: 500)')
 
     # Execution
     parser.add_argument('--output-dir', type=str, required=True,
@@ -333,8 +329,9 @@ Examples:
         bbox=args.bbox,
         year=args.year,
         agbd_max=args.agbd_max,
-        total_samples=args.total_samples,
+        n_iterations=args.n_iterations,
         samples_per_iter=args.samples_per_iter,
+        n_pool=args.n_pool,
         base_output_dir=output_dir
     )
 
@@ -353,8 +350,9 @@ Examples:
         'bbox': args.bbox,
         'year': args.year,
         'agbd_max': args.agbd_max,
-        'total_samples': args.total_samples,
+        'n_iterations': args.n_iterations,
         'samples_per_iter': args.samples_per_iter,
+        'n_pool': args.n_pool,
         'n_experiments': len(configs),
         'timestamp': datetime.now().isoformat()
     }
