@@ -99,8 +99,8 @@ def aggregate_runs(runs: List[Dict]) -> Dict:
         # Find minimum length
         min_length = min(len(run[metric]) for run in runs)
 
-        # Truncate all runs to minimum length
-        values = np.array([run[metric][:min_length] for run in runs])
+        # Truncate all runs to minimum length and convert to float (handle string values from JSON)
+        values = np.array([[float(v) for v in run[metric][:min_length]] for run in runs])
 
         aggregated[f'{metric}_mean'] = values.mean(axis=0)
         aggregated[f'{metric}_sem'] = values.std(axis=0) / np.sqrt(len(runs))
@@ -221,8 +221,9 @@ def compute_sample_efficiency(
             samples_needed_list = []
 
             for run in runs:
-                n_train = np.array(run['n_train'])
-                test_rmse = np.array(run['test_rmse'])
+                # Convert to float to handle string values from JSON
+                n_train = np.array([float(x) for x in run['n_train']])
+                test_rmse = np.array([float(x) for x in run['test_rmse']])
 
                 # Find first point where RMSE < target
                 idx = np.where(test_rmse < target_rmse)[0]
@@ -330,11 +331,12 @@ def plot_cold_start_advantage(
     Computes: (random_metric - uncertainty_metric) vs seed_size
     Positive values mean uncertainty is better.
     """
-    seed_sizes = sorted(results.keys())
+    all_seed_sizes = sorted(results.keys())
+    seed_sizes = []
     advantages = []
     advantages_sem = []
 
-    for seed_size in seed_sizes:
+    for seed_size in all_seed_sizes:
         if 'random' not in results[seed_size] or 'uncertainty' not in results[seed_size]:
             continue
 
@@ -342,9 +344,9 @@ def plot_cold_start_advantage(
         uncertainty_runs = results[seed_size]['uncertainty']['runs']
 
         # Compute advantage for each random seed
-        # We'll use the final metric value
-        random_final = [run[metric][-1] for run in random_runs if run[metric]]
-        uncertainty_final = [run[metric][-1] for run in uncertainty_runs if run[metric]]
+        # We'll use the final metric value (convert to float to handle string values from JSON)
+        random_final = [float(run[metric][-1]) for run in random_runs if run[metric]]
+        uncertainty_final = [float(run[metric][-1]) for run in uncertainty_runs if run[metric]]
 
         if random_final and uncertainty_final:
             # For RMSE, lower is better, so advantage = random - uncertainty
@@ -359,11 +361,14 @@ def plot_cold_start_advantage(
             uncertainty_sem = np.std(uncertainty_final) / np.sqrt(len(uncertainty_final))
             adv_sem = np.sqrt(random_sem**2 + uncertainty_sem**2)
 
+            seed_sizes.append(seed_size)
             advantages.append(adv)
             advantages_sem.append(adv_sem)
-        else:
-            advantages.append(np.nan)
-            advantages_sem.append(0)
+
+    # Skip plotting if no data
+    if not seed_sizes:
+        print("Warning: No data available for cold start advantage plot")
+        return
 
     # Plot
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -432,9 +437,9 @@ def compute_statistical_tests(results: Dict) -> pd.DataFrame:
             runs1 = results[seed_size][strategy1]['runs']
             runs2 = results[seed_size][strategy2]['runs']
 
-            # Use final test_rmse
-            values1 = [run['test_rmse'][-1] for run in runs1 if run['test_rmse']]
-            values2 = [run['test_rmse'][-1] for run in runs2 if run['test_rmse']]
+            # Use final test_rmse (convert to float to handle string values from JSON)
+            values1 = [float(run['test_rmse'][-1]) for run in runs1 if run['test_rmse']]
+            values2 = [float(run['test_rmse'][-1]) for run in runs2 if run['test_rmse']]
 
             if not values1 or not values2:
                 continue
