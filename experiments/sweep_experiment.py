@@ -347,11 +347,12 @@ def statistical_tests(
                         stat, p_value = stats.wilcoxon(vals1, vals2)
 
                         comparison_key = f"{strategy1}_vs_{strategy2}"
+                        p_value_float = float(p_value)
                         metric_results[comparison_key] = {
                             'statistic': float(stat),
-                            'p_value': float(p_value),
-                            'significant_05': bool(p_value < 0.05),
-                            'significant_01': bool(p_value < 0.01),
+                            'p_value': p_value_float,
+                            'significant_05': p_value_float < 0.05,
+                            'significant_01': p_value_float < 0.01,
                             f'{strategy1}_mean': float(np.mean(vals1)),
                             f'{strategy2}_mean': float(np.mean(vals2)),
                             'winner': strategy1 if np.mean(vals1) < np.mean(vals2) else strategy2
