@@ -75,7 +75,6 @@ def run_single_experiment(
         '--year', str(config['year']),
         '--agbd-max', str(config['agbd_max']),
         '--n-seed', str(seed_size),
-        '--n-pool', str(config['n_pool']),  # Pool size from config
         '--n-iterations', str(n_iterations),
         '--samples-per-iter', str(samples_per_iter),
         '--strategies', *strategies,  # Pass all strategies
@@ -83,6 +82,10 @@ def run_single_experiment(
         '--cache-dir', str(base_cache_dir),
         '--device', device
     ]
+
+    # Only add --n-pool if specified (None means use default = half of remaining)
+    if config['n_pool'] is not None:
+        cmd.extend(['--n-pool', str(config['n_pool'])])
 
     if dry_run:
         print(f"[DRY RUN] Would run: {' '.join(cmd)}")
@@ -298,8 +301,8 @@ Examples:
                         help='Number of active learning iterations (default: 15)')
     parser.add_argument('--samples-per-iter', type=int, default=10,
                         help='Samples per iteration (default: 10)')
-    parser.add_argument('--n-pool', type=int, default=500,
-                        help='Pool size for active learning (default: 500)')
+    parser.add_argument('--n-pool', type=int, default=None,
+                        help='Pool size for active learning (default: None = half of remaining data)')
 
     # Execution
     parser.add_argument('--output-dir', type=str, required=True,
