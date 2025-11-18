@@ -2,6 +2,11 @@
 
 This directory contains scripts for running active learning experiments with GEDI Neural Process models.
 
+## Scripts
+
+- **`active_learning_experiment.py`**: Run a single active learning experiment
+- **`sweep_experiment.py`**: Run seed sweep experiments to quantify variance and statistical significance
+
 ## Quick Start
 
 Run the full active learning experiment (Maine forests):
@@ -39,6 +44,7 @@ python experiments/active_learning_experiment.py --device cuda
 - `--cache-dir`: Cache directory for GEDI/embeddings (default: ./cache)
 - `--sample-limit`: Limit total samples for testing (optional)
 - `--device`: Device to use (default: cuda if available, else cpu)
+- `--seed`: Random seed for data splitting (default: 42)
 
 ## Data Splits
 
@@ -121,3 +127,63 @@ python experiments/active_learning_experiment.py \
     --output-dir ./results/test \
     --device cpu
 ```
+
+## Seed Sweep Experiments
+
+For statistically rigorous results, run multiple experiments with different random seeds:
+
+```bash
+python experiments/sweep_experiment.py \
+    --n-seeds 5 \
+    --bbox -70.0 44.0 -69.0 45.0 \
+    --year 2022 \
+    --n-seed 100 \
+    --n-iterations 15 \
+    --samples-per-iter 10 \
+    --strategies random uncertainty spatial hybrid \
+    --device cuda
+```
+
+### Sweep Arguments
+
+- `--n-seeds`: Number of random seeds to run (default: 5)
+- `--start-seed`: Starting seed value (default: 42)
+- `--output-dir`: Output directory (default: ./results/sweep_TIMESTAMP)
+
+All other arguments are passed through to `active_learning_experiment.py`.
+
+### Sweep Output
+
+The sweep produces:
+
+```
+results/sweep_TIMESTAMP/
+├── sweep_config.json                  # Sweep configuration
+├── aggregated_results.json            # Mean/std/min/max across seeds
+├── all_seed_results.pkl               # Raw results for custom analysis
+├── learning_curves_with_confidence.png # Learning curves with ±1 std bands
+├── summary_table.csv                  # Final metrics: mean ± std
+├── statistical_tests.json             # Pairwise significance tests (Wilcoxon)
+├── seed_42/
+│   ├── random/, uncertainty/, spatial/, hybrid/
+│   └── results.json
+├── seed_43/
+│   └── ...
+...
+└── seed_46/
+    └── ...
+```
+
+### Statistical Testing
+
+The sweep automatically performs pairwise statistical significance tests using the Wilcoxon signed-rank test. Results are saved to `statistical_tests.json` and include:
+- p-values for each comparison
+- Significance at 0.05 and 0.01 levels
+- Winner (strategy with better mean performance)
+
+### Benefits
+
+- **Quantify variance** due to random data splits
+- **Statistical rigor** for ML research
+- **Confidence intervals** on learning curves
+- **Publication-ready** results with error bars

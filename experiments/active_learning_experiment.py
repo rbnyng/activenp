@@ -224,7 +224,7 @@ def run_active_learning(
 
     # Get sampler
     if strategy == 'random':
-        sampler = get_sampler('random', seed=42)
+        sampler = get_sampler('random', seed=config['seed'])
     elif strategy == 'uncertainty':
         sampler = get_sampler('uncertainty')
     elif strategy == 'spatial':
@@ -364,6 +364,8 @@ def main():
                         help='Limit total samples (for testing)')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
                         help='Device to use')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed for data splitting (default: 42)')
 
     args = parser.parse_args()
 
@@ -395,7 +397,8 @@ def main():
         'n_seed': args.n_seed,
         'n_pool': args.n_pool,
         'n_iterations': args.n_iterations,
-        'samples_per_iteration': args.samples_per_iter
+        'samples_per_iteration': args.samples_per_iter,
+        'seed': args.seed
     }
 
     # Save config
@@ -415,7 +418,7 @@ def main():
         df,
         n_seed=args.n_seed,
         n_pool=args.n_pool,
-        seed=42
+        seed=args.seed
     )
 
     # Save splits
