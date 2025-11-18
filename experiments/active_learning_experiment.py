@@ -323,21 +323,51 @@ def plot_learning_curves(
     plt.close()
 
 
+def convert_to_native_types(obj):
+    """
+    Recursively convert numpy/torch types to Python native types for JSON serialization.
+
+    Args:
+        obj: Object to convert (can be dict, list, numpy array, numpy scalar, etc.)
+
+    Returns:
+        Object with all numpy/torch types converted to Python native types
+    """
+    if isinstance(obj, dict):
+        return {key: convert_to_native_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_native_types(item) for item in obj]
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif hasattr(obj, 'tolist'):  # torch tensors and similar
+        return obj.tolist()
+    else:
+        return obj
+
+
 def save_results(
     histories: dict,
     config: dict,
     output_dir: Path
 ):
     """Save results to JSON."""
+    # Convert numpy/torch types to Python native types
+    histories_converted = convert_to_native_types(histories)
+    config_converted = convert_to_native_types(config)
+
     results = {
-        'config': config,
-        'histories': histories,
+        'config': config_converted,
+        'histories': histories_converted,
         'timestamp': datetime.now().isoformat()
     }
 
     output_path = output_dir / 'results.json'
     with open(output_path, 'w') as f:
-        json.dump(results, f, indent=2, default=str)
+        json.dump(results, f, indent=2)
 
     print(f"Saved results to: {output_path}")
 
