@@ -207,6 +207,11 @@ def run_active_learning(
     print(f"Running Active Learning: {strategy.upper()}")
     print(f"{'='*60}")
 
+    # Reset random seeds for consistent initialization across strategies
+    torch.manual_seed(config['seed'])
+    torch.cuda.manual_seed_all(config['seed'])
+    np.random.seed(config['seed'])
+
     # Initialize model
     model = GEDINeuralProcess(
         patch_size=config['patch_size'],
@@ -376,6 +381,15 @@ def main():
 
     device = torch.device(args.device)
     print(f"Using device: {device}")
+
+    # Set random seeds for reproducibility
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    np.random.seed(args.seed)
+
+    # Enable deterministic behavior (may impact performance)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     # Model configuration
     config = {
