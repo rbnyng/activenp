@@ -15,7 +15,6 @@ from .strategies import (
     get_sampler,
 )
 
-from .loop import ActiveLearningLoop
 from .simple_loop import SimpleActiveLearningLoop
 
 __all__ = [
@@ -24,6 +23,5 @@ __all__ = [
     'SpatialSampler',
     'HybridSampler',
     'get_sampler',
-    'ActiveLearningLoop',
     'SimpleActiveLearningLoop',
 ]
