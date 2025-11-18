@@ -382,14 +382,10 @@ def main():
     device = torch.device(args.device)
     print(f"Using device: {device}")
 
-    # Set random seeds for reproducibility
+    # Set random seeds
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     np.random.seed(args.seed)
-
-    # Enable deterministic behavior (may impact performance)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
     # Model configuration
     config = {
@@ -398,11 +394,11 @@ def main():
         'context_repr_dim': 256,
         'hidden_dim': 512,
         'latent_dim': 256,
-        'architecture_mode': 'anp',  # Use full ANP with latent path for better few-shot
+        'architecture_mode': 'anp',
         'num_attention_heads': 16,
         'learning_rate': 5e-4,
         'batch_size': 32,
-        'epochs_per_iteration': 30,  # Reduced from 50 to prevent overfitting
+        'epochs_per_iteration': 30,
         'kl_weight': 0.1,
         'global_bounds': tuple(args.bbox),
         'bbox': args.bbox,
