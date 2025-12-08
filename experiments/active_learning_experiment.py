@@ -444,7 +444,7 @@ def main():
     parser.add_argument('--samples-per-iter', type=int, default=10,
                         help='Samples to acquire per iteration')
     parser.add_argument('--strategies', type=str, nargs='+',
-                        default=['random', 'uncertainty', 'spatial', 'hybrid'],
+                        default=['random', 'uncertainty', 'spatial', 'hybrid', 'hybrid_product'],
                         help='Sampling strategies to compare')
     parser.add_argument('--model-types', type=str, nargs='+',
                         default=['anp'],
