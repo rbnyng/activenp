@@ -398,7 +398,7 @@ class SimpleActiveLearningLoop:
         """
         # Get uncertainties for pool if needed
         uncertainties = None
-        if self.sampler.name in ['uncertainty', 'hybrid']:
+        if self.sampler.name in ['uncertainty', 'hybrid', 'hybrid_product']:
             uncertainties = self._get_pool_uncertainties(train_df, pool_df)
 
         # Get coordinates

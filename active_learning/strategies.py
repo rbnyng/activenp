@@ -256,12 +256,72 @@ class HybridSampler(SamplingStrategy):
         return selected
 
 
+class HybridProductSampler(SamplingStrategy):
+    """
+    Hybrid sampling using product: uncertainty(x) × min_distance(x, training_set).
+
+    This is a more principled hybrid approach that explicitly rewards points
+    that are both uncertain AND far from existing samples. The multiplicative
+    combination ensures we only select points that score high on both criteria.
+
+    Reference formulation from active learning literature:
+        score(x) = uncertainty(x) * min_distance(x, training_set)
+
+    This tends to be more effective than the filter-then-spatial approach
+    for balancing exploration and exploitation.
+    """
+
+    def __init__(self, distance_weight: float = 1.0):
+        """
+        Initialize hybrid product sampler.
+
+        Args:
+            distance_weight: Weight for distance term (default: 1.0)
+                Higher values favor exploration (spatial diversity)
+                Lower values favor exploitation (uncertainty)
+        """
+        super().__init__("hybrid_product")
+        self.distance_weight = distance_weight
+
+    def select_samples(
+        self,
+        pool_indices: np.ndarray,
+        pool_coords: np.ndarray,
+        n_samples: int,
+        uncertainties: Optional[np.ndarray] = None,
+        train_coords: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """Select samples maximizing uncertainty × distance product."""
+        if uncertainties is None:
+            raise ValueError("HybridProductSampler requires uncertainties")
+        if train_coords is None or len(train_coords) == 0:
+            raise ValueError("HybridProductSampler requires training coordinates")
+
+        n_samples = min(n_samples, len(pool_indices))
+
+        # Compute minimum distance to training set for each pool point
+        distances = cdist(pool_coords, train_coords).min(axis=1)
+
+        # Normalize both terms to [0, 1] for balanced contribution
+        # (prevents one term from dominating due to scale differences)
+        uncertainties_norm = uncertainties / (uncertainties.max() + 1e-8)
+        distances_norm = distances / (distances.max() + 1e-8)
+
+        # Compute acquisition score: uncertainty × distance
+        scores = uncertainties_norm * (distances_norm ** self.distance_weight)
+
+        # Select top-k by score
+        top_k_idx = np.argsort(scores)[-n_samples:]
+
+        return pool_indices[top_k_idx]
+
+
 def get_sampler(strategy_name: str, **kwargs) -> SamplingStrategy:
     """
     Factory function to get a sampling strategy by name.
 
     Args:
-        strategy_name: Name of strategy ('random', 'uncertainty', 'spatial', 'hybrid')
+        strategy_name: Name of strategy ('random', 'uncertainty', 'spatial', 'hybrid', 'hybrid_product')
         **kwargs: Additional arguments for the strategy
 
     Returns:
@@ -275,5 +335,7 @@ def get_sampler(strategy_name: str, **kwargs) -> SamplingStrategy:
         return SpatialSampler(**kwargs)
     elif strategy_name == 'hybrid':
         return HybridSampler(**kwargs)
+    elif strategy_name == 'hybrid_product':
+        return HybridProductSampler(**kwargs)
     else:
         raise ValueError(f"Unknown sampling strategy: {strategy_name}")

@@ -29,8 +29,11 @@ from datetime import datetime
 from data.gedi import GEDIQuerier
 from data.embeddings import EmbeddingExtractor
 from active_learning import get_sampler, SimpleActiveLearningLoop
+from active_learning.rf_loop import RFActiveLearningLoop
 from models.neural_process import GEDINeuralProcess
+from models.random_forest_baseline import RandomForestBaseline
 from utils.config import save_config
+from utils.spatial import split_data_spatial_block
 
 
 def query_and_prepare_data(
@@ -133,7 +136,11 @@ def split_data(
     df: pd.DataFrame,
     n_seed: int = 100,
     n_pool: int = None,
-    seed: int = 42
+    seed: int = 42,
+    spatial_blocking: bool = False,
+    test_fraction: float = 0.2,
+    n_blocks_lon: int = 4,
+    n_blocks_lat: int = 4
 ) -> tuple:
     """
     Split data into seed (initial training), pool, and test sets.
@@ -143,36 +150,54 @@ def split_data(
         n_seed: Size of initial seed set
         n_pool: Size of pool for active learning (None = use half of remaining)
         seed: Random seed
+        spatial_blocking: If True, use spatially-blocked test set (gold standard)
+        test_fraction: Fraction of data for spatially-blocked test set
+        n_blocks_lon: Number of spatial blocks along longitude
+        n_blocks_lat: Number of spatial blocks along latitude
 
     Returns:
         (seed_df, pool_df, test_df)
 
     Note: test_df contains ALL remaining data to evaluate how well the
-    sampling policy covers the entire AOI.
+    sampling policy covers the entire AOI. If spatial_blocking=True,
+    the test set is spatially separated from training data.
     """
     print(f"\n{'='*60}")
     print("Step 3: Splitting data")
     print(f"{'='*60}")
 
-    np.random.seed(seed)
-    df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
+    if spatial_blocking:
+        print("Using spatially-blocked test set (gold standard for geospatial evaluation)")
+        return split_data_spatial_block(
+            df=df,
+            n_seed=n_seed,
+            n_pool=n_pool,
+            test_fraction=test_fraction,
+            n_blocks_lon=n_blocks_lon,
+            n_blocks_lat=n_blocks_lat,
+            seed=seed
+        )
+    else:
+        print("Using random test set")
+        np.random.seed(seed)
+        df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
 
-    # Split: seed + pool + test (everything else)
-    seed_df = df.iloc[:n_seed].copy()
-    remaining = df.iloc[n_seed:].copy()
+        # Split: seed + pool + test (everything else)
+        seed_df = df.iloc[:n_seed].copy()
+        remaining = df.iloc[n_seed:].copy()
 
-    # Pool size: either specified or half of remaining data
-    if n_pool is None:
-        n_pool = len(remaining) // 2
+        # Pool size: either specified or half of remaining data
+        if n_pool is None:
+            n_pool = len(remaining) // 2
 
-    pool_df = remaining.iloc[:n_pool].copy()
-    test_df = remaining.iloc[n_pool:].copy()  # Everything else as test
+        pool_df = remaining.iloc[:n_pool].copy()
+        test_df = remaining.iloc[n_pool:].copy()  # Everything else as test
 
-    print(f"Seed (initial train): {len(seed_df)}")
-    print(f"Pool: {len(pool_df)}")
-    print(f"Test (full AOI coverage): {len(test_df)}")
+        print(f"Seed (initial train): {len(seed_df)}")
+        print(f"Pool: {len(pool_df)}")
+        print(f"Test (full AOI coverage): {len(test_df)}")
 
-    return seed_df, pool_df, test_df
+        return seed_df, pool_df, test_df
 
 
 def run_active_learning(
@@ -184,7 +209,8 @@ def run_active_learning(
     device: torch.device,
     n_iterations: int = 15,
     samples_per_iteration: int = 10,
-    output_dir: Path = None
+    output_dir: Path = None,
+    model_type: str = 'anp'
 ) -> dict:
     """
     Run active learning with specified strategy.
@@ -199,33 +225,19 @@ def run_active_learning(
         n_iterations: Number of AL iterations
         samples_per_iteration: Samples to acquire per iteration
         output_dir: Directory to save results
+        model_type: 'anp' or 'rf' (Random Forest baseline)
 
     Returns:
         History dictionary
     """
     print(f"\n{'='*60}")
-    print(f"Running Active Learning: {strategy.upper()}")
+    print(f"Running Active Learning: {model_type.upper()} - {strategy.upper()}")
     print(f"{'='*60}")
 
     # Reset random seeds for consistent initialization across strategies
     torch.manual_seed(config['seed'])
     torch.cuda.manual_seed_all(config['seed'])
     np.random.seed(config['seed'])
-
-    # Initialize model
-    model = GEDINeuralProcess(
-        patch_size=config['patch_size'],
-        embedding_channels=128,
-        embedding_feature_dim=config['embedding_feature_dim'],
-        context_repr_dim=config['context_repr_dim'],
-        hidden_dim=config['hidden_dim'],
-        latent_dim=config['latent_dim'],
-        output_uncertainty=True,
-        architecture_mode=config['architecture_mode'],
-        num_attention_heads=config['num_attention_heads']
-    ).to(device)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=config['learning_rate'])
 
     # Get sampler
     if strategy == 'random':
@@ -236,25 +248,55 @@ def run_active_learning(
         sampler = get_sampler('spatial', method='maxmin')
     elif strategy == 'hybrid':
         sampler = get_sampler('hybrid', uncertainty_percentile=0.75, spatial_method='maxmin')
+    elif strategy == 'hybrid_product':
+        sampler = get_sampler('hybrid_product', distance_weight=1.0)
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
 
-    # Create active learning loop (using simplified version for individual samples)
-    al_loop = SimpleActiveLearningLoop(
-        model=model,
-        optimizer=optimizer,
-        device=device,
-        sampler=sampler,
-        batch_size=config['batch_size'],
-        epochs_per_iteration=config['epochs_per_iteration'],
-        kl_weight=config['kl_weight'],
-        global_bounds=config['global_bounds'],
-        context_ratio=0.5,  # Use 50% as context, 50% as targets
-        verbose=True
-    )
+    if model_type == 'rf':
+        # Random Forest baseline
+        model = RandomForestBaseline(
+            n_estimators=100,
+            max_depth=None,
+            random_state=config['seed']
+        )
+
+        al_loop = RFActiveLearningLoop(
+            model=model,
+            sampler=sampler,
+            verbose=True
+        )
+    else:
+        # ANP model
+        model = GEDINeuralProcess(
+            patch_size=config['patch_size'],
+            embedding_channels=128,
+            embedding_feature_dim=config['embedding_feature_dim'],
+            context_repr_dim=config['context_repr_dim'],
+            hidden_dim=config['hidden_dim'],
+            latent_dim=config['latent_dim'],
+            output_uncertainty=True,
+            architecture_mode=config['architecture_mode'],
+            num_attention_heads=config['num_attention_heads']
+        ).to(device)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=config['learning_rate'])
+
+        al_loop = SimpleActiveLearningLoop(
+            model=model,
+            optimizer=optimizer,
+            device=device,
+            sampler=sampler,
+            batch_size=config['batch_size'],
+            epochs_per_iteration=config['epochs_per_iteration'],
+            kl_weight=config['kl_weight'],
+            global_bounds=config['global_bounds'],
+            context_ratio=0.5,  # Use 50% as context, 50% as targets
+            verbose=True
+        )
 
     # Run
-    save_dir = output_dir / strategy if output_dir else None
+    save_dir = output_dir / f"{model_type}_{strategy}" if output_dir else None
     history = al_loop.run(
         train_df=seed_df,
         pool_df=pool_df,
@@ -275,7 +317,7 @@ def plot_learning_curves(
     Plot learning curves comparing different strategies.
 
     Args:
-        histories: Dict mapping strategy name to history dict
+        histories: Dict mapping (model_type, strategy) to history dict
         output_dir: Directory to save plots
     """
     print(f"\n{'='*60}")
@@ -291,21 +333,34 @@ def plot_learning_curves(
         ('train_loss', 'Training Loss', axes[1, 1])
     ]
 
+    # Colors for ANP strategies
     colors = {
         'random': 'gray',
         'uncertainty': 'red',
         'spatial': 'blue',
-        'hybrid': 'green'
+        'hybrid': 'green',
+        'hybrid_product': 'purple'
     }
 
     for metric_key, metric_name, ax in metrics:
-        for strategy_name, history in histories.items():
+        for (model_type, strategy_name), history in histories.items():
+            # Determine color and style
+            if model_type == 'rf':
+                color = 'orange'
+                linestyle = '--'
+                label = f"RF-{strategy_name.capitalize()}"
+            else:
+                color = colors.get(strategy_name, 'black')
+                linestyle = '-'
+                label = f"ANP-{strategy_name.capitalize()}"
+
             ax.plot(
                 history['n_train'],
                 history[metric_key],
                 marker='o',
-                label=strategy_name.capitalize(),
-                color=colors.get(strategy_name, 'black'),
+                label=label,
+                color=color,
+                linestyle=linestyle,
                 linewidth=2,
                 markersize=6
             )
@@ -391,6 +446,17 @@ def main():
     parser.add_argument('--strategies', type=str, nargs='+',
                         default=['random', 'uncertainty', 'spatial', 'hybrid'],
                         help='Sampling strategies to compare')
+    parser.add_argument('--model-types', type=str, nargs='+',
+                        default=['anp'],
+                        help='Model types to compare: anp, rf (default: anp)')
+    parser.add_argument('--spatial-blocking', action='store_true',
+                        help='Use spatially-blocked test set (gold standard for geospatial evaluation)')
+    parser.add_argument('--test-fraction', type=float, default=0.2,
+                        help='Fraction of data for spatially-blocked test set (default: 0.2)')
+    parser.add_argument('--n-blocks-lon', type=int, default=4,
+                        help='Number of spatial blocks along longitude (default: 4)')
+    parser.add_argument('--n-blocks-lat', type=int, default=4,
+                        help='Number of spatial blocks along latitude (default: 4)')
     parser.add_argument('--output-dir', type=str, default='./results/active_learning',
                         help='Output directory')
     parser.add_argument('--cache-dir', type=str, default='./cache',
@@ -458,7 +524,11 @@ def main():
         df,
         n_seed=args.n_seed,
         n_pool=args.n_pool,
-        seed=args.seed
+        seed=args.seed,
+        spatial_blocking=args.spatial_blocking,
+        test_fraction=args.test_fraction,
+        n_blocks_lon=args.n_blocks_lon,
+        n_blocks_lat=args.n_blocks_lat
     )
 
     # Save splits
@@ -466,21 +536,27 @@ def main():
     pool_df.to_pickle(output_dir / 'pool_df.pkl')
     test_df.to_pickle(output_dir / 'test_df.pkl')
 
-    # Run active learning for each strategy
+    # Run active learning for each model type and strategy combination
     histories = {}
-    for strategy in args.strategies:
-        history = run_active_learning(
-            seed_df=seed_df,
-            pool_df=pool_df,
-            test_df=test_df,
-            strategy=strategy,
-            config=config,
-            device=device,
-            n_iterations=args.n_iterations,
-            samples_per_iteration=args.samples_per_iter,
-            output_dir=output_dir
-        )
-        histories[strategy] = history
+    for model_type in args.model_types:
+        for strategy in args.strategies:
+            print(f"\n{'='*80}")
+            print(f"Running: {model_type.upper()} with {strategy.upper()} strategy")
+            print(f"{'='*80}")
+
+            history = run_active_learning(
+                seed_df=seed_df,
+                pool_df=pool_df,
+                test_df=test_df,
+                strategy=strategy,
+                config=config,
+                device=device,
+                n_iterations=args.n_iterations,
+                samples_per_iteration=args.samples_per_iter,
+                output_dir=output_dir,
+                model_type=model_type
+            )
+            histories[(model_type, strategy)] = history
 
     # Plot and save results
     plot_learning_curves(histories, output_dir)

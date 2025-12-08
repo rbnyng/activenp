@@ -12,16 +12,20 @@ from .strategies import (
     UncertaintySampler,
     SpatialSampler,
     HybridSampler,
+    HybridProductSampler,
     get_sampler,
 )
 
 from .simple_loop import SimpleActiveLearningLoop
+from .rf_loop import RFActiveLearningLoop
 
 __all__ = [
     'RandomSampler',
     'UncertaintySampler',
     'SpatialSampler',
     'HybridSampler',
+    'HybridProductSampler',
     'get_sampler',
     'SimpleActiveLearningLoop',
+    'RFActiveLearningLoop',
 ]
