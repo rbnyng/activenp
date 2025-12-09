@@ -257,7 +257,7 @@ def run_active_learning(
         # Random Forest baseline
         model = RandomForestBaseline(
             n_estimators=100,
-            max_depth=None,
+            max_depth=10,
             random_state=config['seed']
         )
 
