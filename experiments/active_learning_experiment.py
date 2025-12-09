@@ -453,10 +453,10 @@ def main():
                         help='Use spatially-blocked test set (gold standard for geospatial evaluation)')
     parser.add_argument('--test-fraction', type=float, default=0.2,
                         help='Fraction of data for spatially-blocked test set (default: 0.2)')
-    parser.add_argument('--n-blocks-lon', type=int, default=4,
-                        help='Number of spatial blocks along longitude (default: 4)')
-    parser.add_argument('--n-blocks-lat', type=int, default=4,
-                        help='Number of spatial blocks along latitude (default: 4)')
+    parser.add_argument('--n-blocks-lon', type=int, default=10,
+                        help='Number of spatial blocks along longitude')
+    parser.add_argument('--n-blocks-lat', type=int, default=10,
+                        help='Number of spatial blocks along latitude')
     parser.add_argument('--output-dir', type=str, default='./results/active_learning',
                         help='Output directory')
     parser.add_argument('--cache-dir', type=str, default='./cache',
