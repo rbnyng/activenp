@@ -19,8 +19,6 @@ LOG_SIGMA_MAX = 2.0
 
 
 class EmbeddingEncoder(nn.Module):
-    """Encode GeoTessera embedding patches into feature vectors."""
-
     def __init__(
         self,
         patch_size: int = 3,
@@ -28,18 +26,9 @@ class EmbeddingEncoder(nn.Module):
         hidden_dim: int = 256,
         output_dim: int = 128
     ):
-        """
-        Initialize embedding encoder.
-
-        Args:
-            patch_size: Size of embedding patch (e.g., 3x3)
-            in_channels: Number of embedding channels (128 for GeoTessera)
-            hidden_dim: Hidden layer dimension
-            output_dim: Output feature dimension
-        """
         super().__init__()
 
-        # Deeper CNN to process spatial structure of embedding patch
+        # CNN to process spatial structure of embedding patch
         self.conv1 = nn.Conv2d(in_channels, hidden_dim, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(hidden_dim)
         self.conv2 = nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1)
@@ -47,10 +36,10 @@ class EmbeddingEncoder(nn.Module):
         self.conv3 = nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(hidden_dim)
 
-        # Residual connection for first block
+        # res connection for first block
         self.residual_proj = nn.Conv2d(in_channels, hidden_dim, kernel_size=1)
 
-        # Global pooling and projection
+        # pooling and projection
         self.pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
@@ -59,37 +48,22 @@ class EmbeddingEncoder(nn.Module):
         )
 
     def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
-        """
-        Encode embedding patches.
-
-        Args:
-            embeddings: (batch, patch_size, patch_size, channels)
-
-        Returns:
-            Feature vectors (batch, output_dim)
-        """
-        # Reshape to (batch, channels, height, width)
         x = embeddings.permute(0, 3, 1, 2)
 
-        # First block with residual
         identity = self.residual_proj(x)
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)) + identity)
 
-        # Third conv layer
         x = F.relu(self.bn3(self.conv3(x)) + x)
 
         # Global pooling
         x = self.pool(x).squeeze(-1).squeeze(-1)
-
-        # Projection
         x = self.fc(x)
 
         return x
 
 
 class ContextEncoder(nn.Module):
-    """Encode context points (coord + embedding + agbd) into representations."""
 
     def __init__(
         self,
@@ -98,15 +72,6 @@ class ContextEncoder(nn.Module):
         hidden_dim: int = 256,
         output_dim: int = 128
     ):
-        """
-        Initialize context encoder.
-
-        Args:
-            coord_dim: Coordinate dimension (2 for lon/lat)
-            embedding_dim: Embedding feature dimension
-            hidden_dim: Hidden layer dimension
-            output_dim: Output representation dimension
-        """
         super().__init__()
 
         input_dim = coord_dim + embedding_dim + 1  # coords + embedding + agbd
@@ -125,44 +90,18 @@ class ContextEncoder(nn.Module):
         embedding_features: torch.Tensor,
         agbd: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Encode context points.
-
-        Args:
-            coords: (batch, coord_dim)
-            embedding_features: (batch, embedding_dim)
-            agbd: (batch, 1)
-
-        Returns:
-            Representations (batch, output_dim)
-        """
         x = torch.cat([coords, embedding_features, agbd], dim=-1)
-
-        # First layer
         x = F.relu(self.ln1(self.fc1(x)))
 
-        # Second layer with residual
         identity = x
         x = F.relu(self.ln2(self.fc2(x)) + identity)
-
-        # Third layer with residual
         x = F.relu(self.ln3(self.fc3(x)) + x)
-
-        # Output projection
         x = self.fc_out(x)
 
         return x
 
 
 class Decoder(nn.Module):
-    """
-    Decode query point + context representation to AGBD prediction.
-
-    IMPORTANT: This decoder outputs (mean, log_var) where log_var is the
-    logarithm of the VARIANCE (not standard deviation).
-    Convention: log_var = log(variance), so variance = exp(log_var), std = exp(0.5 * log_var)
-    """
-
     def __init__(
         self,
         coord_dim: int = 2,
@@ -171,16 +110,6 @@ class Decoder(nn.Module):
         hidden_dim: int = 256,
         output_uncertainty: bool = True
     ):
-        """
-        Initialize decoder.
-
-        Args:
-            coord_dim: Coordinate dimension
-            embedding_dim: Embedding feature dimension
-            context_dim: Context representation dimension
-            hidden_dim: Hidden layer dimension
-            output_uncertainty: Whether to output uncertainty estimate
-        """
         super().__init__()
 
         self.output_uncertainty = output_uncertainty
@@ -193,7 +122,6 @@ class Decoder(nn.Module):
         self.fc3 = nn.Linear(hidden_dim, hidden_dim)
         self.ln3 = nn.LayerNorm(hidden_dim)
 
-        # Output heads
         self.mean_head = nn.Linear(hidden_dim, 1)
 
         if output_uncertainty:
@@ -205,34 +133,21 @@ class Decoder(nn.Module):
         query_embedding_features: torch.Tensor,
         context_repr: torch.Tensor
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """
-        Decode query points.
-
-        Args:
-            query_coords: (batch, coord_dim)
-            query_embedding_features: (batch, embedding_dim)
-            context_repr: (batch, context_dim)
-
-        Returns:
-            (mean, log_variance) predictions, where log_variance is None if not output_uncertainty
-        """
         x = torch.cat([query_coords, query_embedding_features, context_repr], dim=-1)
 
-        # First layer
         x = F.relu(self.ln1(self.fc1(x)))
 
-        # Second layer with residual
+        # layers with residual
         identity = x
         x = F.relu(self.ln2(self.fc2(x)) + identity)
 
-        # Third layer with residual
         x = F.relu(self.ln3(self.fc3(x)) + x)
 
         mean = self.mean_head(x)
 
         if self.output_uncertainty:
             log_var = self.log_var_head(x)
-            # Clamp log_var to prevent numerical instability
+            # clamp log_var to prevent numerical instability
             log_var = torch.clamp(log_var, min=LOG_VAR_MIN, max=LOG_VAR_MAX)
             return mean, log_var
         else:
@@ -240,7 +155,6 @@ class Decoder(nn.Module):
 
 
 class AttentionAggregator(nn.Module):
-    """Attention-based aggregation of context representations."""
 
     def __init__(
         self,
@@ -248,14 +162,6 @@ class AttentionAggregator(nn.Module):
         num_heads: int = 4,
         dropout: float = 0.1
     ):
-        """
-        Initialize attention aggregator.
-
-        Args:
-            dim: Feature dimension
-            num_heads: Number of attention heads
-            dropout: Dropout rate
-        """
         super().__init__()
 
         self.attention = nn.MultiheadAttention(
@@ -272,17 +178,6 @@ class AttentionAggregator(nn.Module):
         query_repr: torch.Tensor,
         context_repr: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Aggregate context using attention.
-
-        Args:
-            query_repr: Query representations (n_query, dim)
-            context_repr: Context representations (n_context, dim)
-
-        Returns:
-            Aggregated context for each query (n_query, dim)
-        """
-        # Expand dimensions for batch processing
         query = query_repr.unsqueeze(0)  # (1, n_query, dim)
         context = context_repr.unsqueeze(0)  # (1, n_context, dim)
 
@@ -300,7 +195,7 @@ class LatentEncoder(nn.Module):
     """
     Encode context representations into latent distribution (stochastic path).
 
-    IMPORTANT: This encoder outputs (mu, log_sigma) where log_sigma is the
+    This encoder outputs (mu, log_sigma) where log_sigma is the
     logarithm of the STANDARD DEVIATION (not variance).
     Convention: log_sigma = log(std), so sigma = exp(log_sigma)
     """
@@ -311,14 +206,6 @@ class LatentEncoder(nn.Module):
         hidden_dim: int = 256,
         latent_dim: int = 128
     ):
-        """
-        Initialize latent encoder.
-
-        Args:
-            context_repr_dim: Dimension of context representations
-            hidden_dim: Hidden layer dimension
-            latent_dim: Dimension of latent variable
-        """
         super().__init__()
 
         self.fc1 = nn.Linear(context_repr_dim, hidden_dim)
@@ -329,28 +216,18 @@ class LatentEncoder(nn.Module):
         self.log_sigma_head = nn.Linear(hidden_dim, latent_dim)
 
     def forward(self, context_repr: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Encode context into latent distribution.
-
-        Args:
-            context_repr: Context representations (n_context, context_repr_dim)
-
-        Returns:
-            (mu, log_sigma) of latent distribution, where log_sigma = log(std)
-            Shape: (1, latent_dim) each
-        """
         # Mean pool context
         pooled = context_repr.mean(dim=0, keepdim=True)
 
-        # Hidden layers
+        # relu hidden layers
         x = F.relu(self.fc1(pooled))
         x = F.relu(self.fc2(x))
 
-        # Predict distribution parameters
+        # pred distribution parameters
         mu = self.mu_head(x)
         log_sigma = self.log_sigma_head(x)
 
-        # Clamp log_sigma for numerical stability
+        # clamp log_sigma for numerical stability
         log_sigma = torch.clamp(log_sigma, min=LOG_SIGMA_MIN, max=LOG_SIGMA_MAX)
 
         return mu, log_sigma
@@ -386,20 +263,6 @@ class GEDINeuralProcess(nn.Module):
         architecture_mode: str = 'deterministic',
         num_attention_heads: int = 4
     ):
-        """
-        Initialize Neural Process.
-
-        Args:
-            patch_size: Size of embedding patches
-            embedding_channels: Number of channels in embeddings
-            embedding_feature_dim: Dimension of encoded embedding features
-            context_repr_dim: Dimension of context representations
-            hidden_dim: Hidden layer dimension
-            latent_dim: Dimension of latent variable
-            output_uncertainty: Whether to predict uncertainty
-            architecture_mode: 'deterministic', 'latent', 'anp', or 'cnp'
-            num_attention_heads: Number of attention heads
-        """
         super().__init__()
 
         assert architecture_mode in ['deterministic', 'latent', 'anp', 'cnp'], \
@@ -409,11 +272,11 @@ class GEDINeuralProcess(nn.Module):
         self.architecture_mode = architecture_mode
         self.latent_dim = latent_dim
 
-        # Determine which components to use
+        # which components to use
         self.use_attention = architecture_mode in ['deterministic', 'anp']
         self.use_latent = architecture_mode in ['latent', 'anp']
 
-        # Embedding encoder (shared for context and query)
+        # embedding encoder (shared for context and query)
         self.embedding_encoder = EmbeddingEncoder(
             patch_size=patch_size,
             in_channels=embedding_channels,
@@ -421,7 +284,7 @@ class GEDINeuralProcess(nn.Module):
             output_dim=embedding_feature_dim
         )
 
-        # Context encoder
+        # context encoder
         self.context_encoder = ContextEncoder(
             coord_dim=2,
             embedding_dim=embedding_feature_dim,
@@ -429,16 +292,16 @@ class GEDINeuralProcess(nn.Module):
             output_dim=context_repr_dim
         )
 
-        # Attention aggregator (deterministic path)
+        # attention aggregator (deterministic path)
         if self.use_attention:
             self.attention_aggregator = AttentionAggregator(
                 dim=context_repr_dim,
                 num_heads=num_attention_heads
             )
-            # Query projection for attention (coord + embedding -> context_repr_dim)
+            # query projection for attention (coord + embedding -> context_repr_dim)
             self.query_proj = nn.Linear(2 + embedding_feature_dim, context_repr_dim)
 
-        # Latent encoder (stochastic path)
+        # latent encoder (stochastic path)
         if self.use_latent:
             self.latent_encoder = LatentEncoder(
                 context_repr_dim=context_repr_dim,
@@ -446,8 +309,8 @@ class GEDINeuralProcess(nn.Module):
                 latent_dim=latent_dim
             )
 
-        # Decoder
-        # Context dim depends on which paths are active
+        # decoder
+        # context dim depends on which paths are active
         decoder_context_dim = 0
         if self.use_attention or architecture_mode == 'cnp':
             decoder_context_dim += context_repr_dim
@@ -469,8 +332,9 @@ class GEDINeuralProcess(nn.Module):
         context_agbd: torch.Tensor,
         query_coords: torch.Tensor,
         query_embeddings: torch.Tensor,
+        query_agbd: Optional[torch.Tensor] = None,
         training: bool = True
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
         Forward pass.
 
@@ -480,33 +344,36 @@ class GEDINeuralProcess(nn.Module):
             context_agbd: (n_context, 1)
             query_coords: (n_query, 2)
             query_embeddings: (n_query, patch_size, patch_size, channels)
+            query_agbd: (n_query, 1) or None (only needed during training for ANP)
             training: Whether in training mode (affects latent sampling)
 
         Returns:
-            (predicted_agbd, log_variance, z_mu, z_log_sigma) for query points
+            (predicted_agbd, log_variance, z_mu_context, z_log_sigma_context, z_mu_all, z_log_sigma_all)
             - predicted_agbd: (n_query, 1)
             - log_variance: (n_query, 1) or None
-            - z_mu: (1, latent_dim) or None (only if use_latent)
-            - z_log_sigma: (1, latent_dim) or None (only if use_latent)
+            - z_mu_context: (1, latent_dim) or None - q(z|C) distribution mean
+            - z_log_sigma_context: (1, latent_dim) or None - q(z|C) distribution log std
+            - z_mu_all: (1, latent_dim) or None - p(z|C,T) distribution mean (training only)
+            - z_log_sigma_all: (1, latent_dim) or None - p(z|C,T) distribution log std (training only)
         """
-        # Encode embeddings
+        # encode embeddings
         context_emb_features = self.embedding_encoder(context_embeddings)
         query_emb_features = self.embedding_encoder(query_embeddings)
 
-        # Encode context points
+        # encode context points
         context_repr = self.context_encoder(
             context_coords,
             context_emb_features,
             context_agbd
         )
 
-        # Initialize outputs
-        z_mu, z_log_sigma = None, None
+        z_mu_context, z_log_sigma_context = None, None
+        z_mu_all, z_log_sigma_all = None, None
         context_components = []
 
         # Deterministic path (attention or mean pooling)
         if self.use_attention:
-            # Query-specific attention aggregation
+            # query specific attention aggregation
             query_repr = torch.cat([query_coords, query_emb_features], dim=-1)
             query_repr_projected = self.query_proj(query_repr)
             aggregated_context = self.attention_aggregator(
@@ -515,46 +382,56 @@ class GEDINeuralProcess(nn.Module):
             )
             context_components.append(aggregated_context)
         elif self.architecture_mode == 'cnp':
-            # Mean pooling for CNP baseline
+            # Mean pooling for CNP
             aggregated_context = context_repr.mean(dim=0, keepdim=True)
             aggregated_context = aggregated_context.expand(query_coords.shape[0], -1)
             context_components.append(aggregated_context)
 
         # Latent path (stochastic)
         if self.use_latent:
-            # Encode context into latent distribution
-            z_mu, z_log_sigma = self.latent_encoder(context_repr)
+            # Always encode q(z|C) - context only distribution
+            z_mu_context, z_log_sigma_context = self.latent_encoder(context_repr)
 
-            # Sample latent variable using reparameterization trick
-            if training:
-                # Sample during training
-                # NOTE: z_log_sigma is log(std), not log(variance)
-                # Therefore: sigma = exp(log_sigma), not exp(0.5 * log_sigma)
-                epsilon = torch.randn_like(z_mu, device=z_mu.device, dtype=z_mu.dtype)
-                z = z_mu + epsilon * torch.exp(z_log_sigma)
+            # During training, also encode p(z|C,T) - full distribution with targets
+            if training and query_agbd is not None:
+                # Encode query/target points
+                query_repr_full = self.context_encoder(
+                    query_coords,
+                    query_emb_features,
+                    query_agbd
+                )
+                # Combine context and target representations
+                all_repr = torch.cat([context_repr, query_repr_full], dim=0)
+                # Encode combined representation
+                z_mu_all, z_log_sigma_all = self.latent_encoder(all_repr)
+
+                # Sample from p(z|C,T) during training
+                epsilon = torch.randn_like(z_mu_all, device=z_mu_all.device, dtype=z_mu_all.dtype)
+                z = z_mu_all + epsilon * torch.exp(z_log_sigma_all)
             else:
-                # Use mean during inference
-                z = z_mu
+                # Use q(z|C) during inference or when query_agbd not provided
+                if training:
+                    epsilon = torch.randn_like(z_mu_context, device=z_mu_context.device, dtype=z_mu_context.dtype)
+                    z = z_mu_context + epsilon * torch.exp(z_log_sigma_context)
+                else:
+                    z = z_mu_context
 
             # Expand latent to match query batch size
             z_expanded = z.expand(query_coords.shape[0], -1)
             context_components.append(z_expanded)
 
-        # Combine paths
         if len(context_components) > 0:
             combined_context = torch.cat(context_components, dim=-1)
         else:
-            # This shouldn't happen with valid architecture_mode
             raise ValueError(f"No context components generated for mode: {self.architecture_mode}")
 
-        # Decode query points
         pred_mean, pred_log_var = self.decoder(
             query_coords,
             query_emb_features,
             combined_context
         )
 
-        return pred_mean, pred_log_var, z_mu, z_log_sigma
+        return pred_mean, pred_log_var, z_mu_context, z_log_sigma_context, z_mu_all, z_log_sigma_all
 
     def predict(
         self,
@@ -564,18 +441,13 @@ class GEDINeuralProcess(nn.Module):
         query_coords: torch.Tensor,
         query_embeddings: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Make predictions with uncertainty.
-
-        Returns:
-            (mean, std) predictions
-        """
-        pred_mean, pred_log_var, _, _ = self.forward(
+        pred_mean, pred_log_var, _, _, _, _ = self.forward(
             context_coords,
             context_embeddings,
             context_agbd,
             query_coords,
             query_embeddings,
+            query_agbd=None,
             training=False
         )
 
@@ -588,30 +460,50 @@ class GEDINeuralProcess(nn.Module):
 
 
 def kl_divergence_gaussian(
-    mu: torch.Tensor,
-    log_sigma: torch.Tensor
+    mu_q: torch.Tensor,
+    log_sigma_q: torch.Tensor,
+    mu_p: Optional[torch.Tensor] = None,
+    log_sigma_p: Optional[torch.Tensor] = None
 ) -> torch.Tensor:
     """
-    Compute KL divergence between N(mu, sigma) and N(0, 1).
+    Compute KL divergence between two Gaussians.
 
-    KL(q||p) = 0.5 * sum(sigma^2 + mu^2 - 1 - log(sigma^2))
+    If mu_p and log_sigma_p are provided:
+        KL[p||q] where p ~ N(mu_p, exp(log_sigma_p)^2) and q ~ N(mu_q, exp(log_sigma_q)^2)
+    Otherwise:
+        KL[q||N(0,1)] where q ~ N(mu_q, exp(log_sigma_q)^2)
 
     Args:
-        mu: Mean of approximate posterior (batch, latent_dim)
-        log_sigma: Log standard deviation (batch, latent_dim), where log_sigma = log(std)
+        mu_q: Mean of q distribution
+        log_sigma_q: Log std of q distribution
+        mu_p: Mean of p distribution (optional)
+        log_sigma_p: Log std of p distribution (optional)
 
     Returns:
-        KL divergence (scalar)
-
-    Note:
-        exp(2 * log_sigma) = exp(2 * log(std)) = std^2 = variance
-        -2 * log_sigma = -log(std^2) = -log(variance)
+        KL divergence scalar
     """
-    # KL divergence formula for Gaussian
-    kl = 0.5 * torch.sum(
-        torch.exp(2 * log_sigma) + mu ** 2 - 1 - 2 * log_sigma,
-        dim=-1
-    )
+    if mu_p is not None and log_sigma_p is not None:
+        # KL[p||q] = E_p[log p(z) - log q(z)]
+        # For Gaussians: KL[N(mu_p, sigma_p^2) || N(mu_q, sigma_q^2)]
+        # = log(sigma_q/sigma_p) + (sigma_p^2 + (mu_p - mu_q)^2) / (2*sigma_q^2) - 1/2
+        # Since we have log_sigma = log(sigma), this becomes:
+        # = (log_sigma_q - log_sigma_p) + (exp(2*log_sigma_p) + (mu_p - mu_q)^2) / (2*exp(2*log_sigma_q)) - 1/2
+
+        var_p = torch.exp(2 * log_sigma_p)
+        var_q = torch.exp(2 * log_sigma_q)
+
+        kl = 0.5 * torch.sum(
+            (log_sigma_q - log_sigma_p) * 2 +  # log(var_q / var_p)
+            (var_p + (mu_p - mu_q) ** 2) / var_q - 1,
+            dim=-1
+        )
+    else:
+        # KL[q||N(0,1)] - original behavior for backwards compatibility
+        kl = 0.5 * torch.sum(
+            torch.exp(2 * log_sigma_q) + mu_q ** 2 - 1 - 2 * log_sigma_q,
+            dim=-1
+        )
+
     return kl.mean()
 
 
@@ -619,27 +511,31 @@ def neural_process_loss(
     pred_mean: torch.Tensor,
     pred_log_var: Optional[torch.Tensor],
     target: torch.Tensor,
-    z_mu: Optional[torch.Tensor] = None,
-    z_log_sigma: Optional[torch.Tensor] = None,
+    z_mu_context: Optional[torch.Tensor] = None,
+    z_log_sigma_context: Optional[torch.Tensor] = None,
+    z_mu_all: Optional[torch.Tensor] = None,
+    z_log_sigma_all: Optional[torch.Tensor] = None,
     kl_weight: float = 1.0
 ) -> Tuple[torch.Tensor, dict]:
     """
-    Loss for Neural Process with optional KL divergence.
+    Compute neural process loss.
 
     Args:
-        pred_mean: Predicted means (batch, 1)
-        pred_log_var: Predicted log variances (batch, 1) or None
-        target: Target values (batch, 1)
-        z_mu: Latent mean (1, latent_dim) or None
-        z_log_sigma: Latent log std (1, latent_dim) or None
-        kl_weight: Weight for KL divergence term (beta-VAE style)
+        pred_mean: Predicted mean
+        pred_log_var: Predicted log variance (optional)
+        target: Target values
+        z_mu_context: Mean of q(z|C) - context only (optional)
+        z_log_sigma_context: Log std of q(z|C) - context only (optional)
+        z_mu_all: Mean of p(z|C,T) - context + target (optional)
+        z_log_sigma_all: Log std of p(z|C,T) - context + target (optional)
+        kl_weight: Weight for KL term
 
     Returns:
-        (total_loss, loss_dict) where loss_dict contains individual components
+        (total_loss, loss_dict)
     """
-    # Reconstruction loss (negative log-likelihood)
+
     if pred_log_var is not None:
-        # Gaussian negative log-likelihood
+        # Gaussian NLL
         nll = 0.5 * (
             pred_log_var +
             torch.exp(-pred_log_var) * (target - pred_mean) ** 2
@@ -650,15 +546,23 @@ def neural_process_loss(
 
     nll = nll.mean()
 
-    # KL divergence (if latent path is used)
+    # KL divergence if latent path is used
     kl = torch.tensor(0.0, device=pred_mean.device)
-    if z_mu is not None and z_log_sigma is not None:
-        kl = kl_divergence_gaussian(z_mu, z_log_sigma)
+    if z_mu_context is not None and z_log_sigma_context is not None:
+        if z_mu_all is not None and z_log_sigma_all is not None:
+            # ANP: KL[p(z|C,T) || q(z|C)]
+            kl = kl_divergence_gaussian(
+                z_mu_context, z_log_sigma_context,
+                z_mu_all, z_log_sigma_all
+            )
+        else:
+            # Latent-only or CNP fallback: KL[q(z|C) || N(0,1)]
+            kl = kl_divergence_gaussian(z_mu_context, z_log_sigma_context)
 
-    # Total loss
+    # loss
     total_loss = nll + kl_weight * kl
 
-    # Return loss components for logging
+    # loss components for logging
     loss_dict = {
         'total': total_loss.item(),
         'nll': nll.item(),
